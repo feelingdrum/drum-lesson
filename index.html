@@ -76,7 +76,27 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #qrCanvas{margin:12px auto;display:block;border:8px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.1);border-radius:6px}
 #shareUrlBox{width:100%;font-size:12px;background:#f4f4f2;color:#333;margin-bottom:10px}
 
-@media(max-width:800px){#app{grid-template-columns:1fr}aside{position:static;max-height:none}}
+.mobile-only{display:none}
+@media (max-width:800px), (max-height:500px){
+  #app{display:block}
+  aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}
+  main{display:flex;flex-direction:column;height:100vh;height:100dvh;padding:6px 8px;overflow:hidden}
+  #top{display:flex;flex-direction:column;flex-wrap:nowrap;gap:6px;flex:none}
+  #vwrap{width:min(100%,44vh);width:min(100%,44dvh);margin:0 auto;border-radius:6px}
+  #ctl{min-width:0;gap:6px;flex:none}
+  #title{font-size:15px}
+  #ctl .row{gap:6px;font-size:14px}
+  #ctl select,#ctl button,#ctl input{padding:5px 7px}
+  .mobile-only{display:inline-block}
+  #ctl:not(.show-more) .more{display:none}
+  #scoreWrap{flex:1;min-height:0;height:auto;margin-top:6px;padding:4px}
+}
+@media (orientation:landscape) and (max-height:500px){
+  main{flex-direction:row;gap:8px}
+  #top{width:38%;flex:none;overflow:auto}
+  #vwrap{width:100%}
+  #scoreWrap{margin-top:0}
+}
 </style>
 </head>
 <body>
@@ -131,20 +151,21 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
           <option>0.5</option><option>0.6</option><option>0.75</option><option>0.85</option><option selected>1</option><option>1.15</option><option>1.25</option></select></label>
         <label><input type="checkbox" id="loop"> 循環選取區</label>
         <button id="clearSel">清除選取</button>
+        <label><input type="checkbox" id="met"> 節拍器</label>
+        <select id="metStep"><option value="960">4分音符</option><option value="480">8分音符</option></select>
+        <button id="moreBtn" class="mobile-only" type="button">⚙ 更多</button>
       </div>
 
-      <div class="row">
+      <div class="row more">
         <label>播放來源 <select id="mode">
           <option value="video">YouTube 影片</option>
           <option value="audio">MP3 / WAV 音檔</option>
           <option value="synth">譜面鼓聲（無原曲）</option>
         </select></label>
-        <label><input type="checkbox" id="met"> 節拍器</label>
-        <select id="metStep"><option value="960">4分音符</option><option value="480">8分音符</option></select>
         <label>節拍器音量 <input type="range" id="metVol" min="0.1" max="1" step="0.05" value="0.6" style="width:80px"></label>
       </div>
 
-      <div class="row">
+      <div class="row more">
         <span class="teacher-only nudge-group" title="調整影片/音檔第一拍起始秒數">
           <label>起始(秒) <input id="offset" type="number" step="0.01" value="0" style="width:76px"></label>
           <button type="button" onclick="nudgeOffset(-0.05)">-0.05</button>
@@ -156,7 +177,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
         <label id="trackWrap" hidden>聲部 <select id="track"></select></label>
       </div>
 
-      <div id="hint">點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
+      <div id="hint" class="more">點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
       <div id="msg"></div>
     </div>
   </div>
@@ -624,6 +645,7 @@ function handleAudioFile(file) {
 }
 $("#inlineMp3").onchange = e => handleAudioFile(e.target.files[0]);
 
+$("#moreBtn").onclick = () => $("#ctl").classList.toggle("show-more");
 $("#goSite").onclick = () => {
   const g = $("#siteGp").value.trim(), u = $("#urlYt").value.trim();
   if (!g || !u) return msg("請填「網站上的 GP 路徑」並貼上 YouTube 網址");
