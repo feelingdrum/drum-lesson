@@ -77,6 +77,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #shareUrlBox{width:100%;font-size:12px;background:#f4f4f2;color:#333;margin-bottom:10px}
 
 .mobile-only{display:none}
+#splitter{flex:none;position:relative;background:#e4e1db;border-radius:8px;height:16px;margin:6px 0 2px;cursor:row-resize;touch-action:none;user-select:none;-webkit-user-select:none}
+#splitter::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:4px;margin:-2px 0 0 -22px;border-radius:2px;background:#9b958a}
+#splitter:hover,#splitter.on{background:#d3cfc6}
+body.dragging{user-select:none;-webkit-user-select:none}
 @media (max-width:800px), (max-height:500px){
   #app{display:block}
   aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}
@@ -89,7 +93,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   #ctl select,#ctl button,#ctl input{padding:5px 7px}
   .mobile-only{display:inline-block}
   #ctl:not(.show-more) .more{display:none}
-  #scoreWrap{flex:1;min-height:0;height:auto;margin-top:6px;padding:4px}
+  #scoreWrap{flex:1;min-height:0;height:auto;margin-top:0;padding:4px}
+  #splitter{margin:4px 0}
 }
 @media (orientation:landscape) and (max-height:500px){
   main{flex-direction:row;gap:8px}
@@ -97,6 +102,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   #vwrap{width:100%;flex:none}
   #title{font-size:13px}
   #scoreWrap{margin-top:0}
+  #splitter{width:16px;height:auto;margin:0;cursor:col-resize;align-self:stretch}
+  #splitter::after{width:4px;height:44px;margin:-22px 0 0 -2px}
 }
 </style>
 </head>
@@ -189,6 +196,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
       <div id="msg"></div>
     </div>
   </div>
+  <div id="splitter" role="separator" aria-label="拖曳調整影片與譜面比例" title="拖曳調整大小；雙擊還原"></div>
   <div id="scoreWrap"><div id="score"></div></div>
 </main>
 </div>
@@ -705,6 +713,40 @@ function handleAudioFile(file) {
 $("#inlineMp3").onchange = e => handleAudioFile(e.target.files[0]);
 
 if (matchMedia("(max-width:800px), (max-height:500px)").matches) $("#zoom").value = "0.7";
+
+// ---- 拖曳調整影片 / 譜面比例 ----
+const isLandCompact = () => matchMedia("(orientation:landscape) and (max-height:500px)").matches;
+const isCompactView = () => matchMedia("(max-width:800px), (max-height:500px)").matches;
+const splitKey = () => isLandCompact() ? "split_land" : isCompactView() ? "split_port" : "split_desk";
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
+function applySplit(v) {
+  $("#top").style.width = ""; $("#vwrap").style.width = "";
+  if (v == null || isNaN(v)) return;
+  if (isLandCompact()) $("#top").style.width = v + "px";
+  else $("#vwrap").style.width = v + "px";
+}
+function splitFromPointer(e) {
+  if (isLandCompact()) {
+    const m = $("main").getBoundingClientRect();
+    return Math.max(140, Math.min(m.width - 180, e.clientX - m.left));
+  }
+  const t = $("#top").getBoundingClientRect();
+  const ctlH = isCompactView() ? $("#ctl").offsetHeight + 6 : 0;
+  const maxW = isCompactView() ? $("main").clientWidth - 16 : 960;
+  return Math.max(90, Math.min(maxW, (e.clientY - t.top - ctlH) * 16 / 9));
+}
+(function () {
+  const sp = $("#splitter"); let dragging = false, last = null, timer = null;
+  const rerender = () => { clearTimeout(timer); timer = setTimeout(() => { try { api.render(); } catch (e) {} }, 150); };
+  sp.addEventListener("pointerdown", e => { dragging = true; sp.setPointerCapture(e.pointerId); sp.classList.add("on"); document.body.classList.add("dragging"); e.preventDefault(); });
+  sp.addEventListener("pointermove", e => { if (!dragging) return; last = splitFromPointer(e); applySplit(last); });
+  const end = () => { if (!dragging) return; dragging = false; sp.classList.remove("on"); document.body.classList.remove("dragging"); if (last != null) store.set(splitKey(), Math.round(last)); rerender(); };
+  sp.addEventListener("pointerup", end); sp.addEventListener("pointercancel", end);
+  sp.addEventListener("dblclick", () => { store.set(splitKey(), null); applySplit(null); rerender(); });
+  const reapply = () => { const v = store.get(splitKey()); applySplit(v == null ? null : Number(v)); };
+  window.addEventListener("resize", reapply); window.addEventListener("orientationchange", reapply);
+  reapply();
+})();
 $("#bpr").onchange = e => { api.settings.display.barsPerRow = Number(e.target.value); api.updateSettings(); api.render(); };
 $("#scrollMode").onchange = e => { api.settings.player.scrollMode = scrollModeOf(e.target.value); api.updateSettings(); };
 $("#moreBtn").onclick = () => $("#ctl").classList.toggle("show-more");
