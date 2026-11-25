@@ -82,7 +82,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}
   main{display:flex;flex-direction:column;height:100vh;height:100dvh;padding:6px 8px;overflow:hidden}
   #top{display:flex;flex-direction:column;flex-wrap:nowrap;gap:6px;flex:none}
-  #vwrap{width:min(100%,44vh);width:min(100%,44dvh);margin:0 auto;border-radius:6px}
+  #vwrap{width:min(100%,44vh);width:min(100%,44dvh);margin:0 auto;border-radius:6px;flex:none}
   #ctl{min-width:0;gap:6px;flex:none}
   #title{font-size:15px}
   #ctl .row{gap:6px;font-size:14px}
@@ -93,8 +93,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 }
 @media (orientation:landscape) and (max-height:500px){
   main{flex-direction:row;gap:8px}
-  #top{width:38%;flex:none;overflow:auto}
-  #vwrap{width:100%}
+  #top{width:36%;flex:none;overflow-y:auto;overflow-x:hidden}
+  #vwrap{width:100%;flex:none}
+  #title{font-size:13px}
   #scoreWrap{margin-top:0}
 }
 </style>
@@ -177,7 +178,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
           <button type="button" onclick="nudgeOffset(0.05)">+0.05</button>
           <button type="button" id="tapSync" title="播放中聽到第一拍時按下，自動抓取目前秒數為 Offset">🎯 抓第一拍</button>
         </span>
-        <label>縮放 <select id="zoom"><option value="0.7">70%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option></select></label>
+        <label>縮放 <select id="zoom"><option value="0.55">55%</option><option value="0.7">70%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option></select></label>
+        <label>每行小節 <select id="bpr"><option value="-1" selected>自動</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select></label>
+        <label>捲動 <select id="scrollMode"><option value="offscreen" selected>出畫面才捲</option><option value="continuous">每換行就捲</option><option value="smooth">平滑持續</option><option value="off">不自動捲</option></select></label>
         <label>版面 <select id="layout"><option value="page">自動換行</option><option value="horizontal">橫向捲動</option></select></label>
         <label id="trackWrap" hidden>聲部 <select id="track"></select></label>
       </div>
@@ -368,6 +371,9 @@ function patchScoreSvg(root) {
 // （已停用）原本的 MutationObserver 會反覆呼叫 patchScoreSvg
 
 let baseBpm = 120, curRate = 1, curVol = 1;
+function scrollModeOf(v) {
+  return { off: alphaTab.ScrollMode.Off, continuous: alphaTab.ScrollMode.Continuous, smooth: alphaTab.ScrollMode.Smooth }[v] ?? alphaTab.ScrollMode.OffScreen;
+}
 function snapRate(r) {
   r = Math.min(Math.max(r, 0.25), 2);
   if (mode === "video" && yt && yt.getAvailablePlaybackRates) {
@@ -420,12 +426,14 @@ function createApi() {
     },
     display: {
       layoutMode: $("#layout").value === "horizontal" ? alphaTab.LayoutMode.Horizontal : alphaTab.LayoutMode.Page,
-      scale: Number($("#zoom").value)
+      scale: Number($("#zoom").value),
+      barsPerRow: Number($("#bpr").value)
     },
     player: {
       playerMode: isExternal ? alphaTab.PlayerMode.EnabledExternalMedia : alphaTab.PlayerMode.EnabledSynthesizer,
       ...(isExternal ? {} : { soundFont: SF }),
       scrollElement: $("#scoreWrap"),
+      scrollMode: scrollModeOf($("#scrollMode").value),
       enableCursor: true, enableUserInteraction: true
     }
   });
@@ -696,6 +704,9 @@ function handleAudioFile(file) {
 }
 $("#inlineMp3").onchange = e => handleAudioFile(e.target.files[0]);
 
+if (matchMedia("(max-width:800px), (max-height:500px)").matches) $("#zoom").value = "0.7";
+$("#bpr").onchange = e => { api.settings.display.barsPerRow = Number(e.target.value); api.updateSettings(); api.render(); };
+$("#scrollMode").onchange = e => { api.settings.player.scrollMode = scrollModeOf(e.target.value); api.updateSettings(); };
 $("#moreBtn").onclick = () => $("#ctl").classList.toggle("show-more");
 $("#goSite").onclick = () => {
   const g = $("#siteGp").value.trim(), u = $("#urlYt").value.trim();
