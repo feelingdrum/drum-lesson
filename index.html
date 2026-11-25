@@ -155,6 +155,11 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
         <select id="metStep"><option value="960">4分音符</option><option value="480">8分音符</option></select>
         <button id="moreBtn" class="mobile-only" type="button">⚙ 更多</button>
       </div>
+      <div class="row">
+        <label>BPM <input type="number" id="bpm" min="20" max="400" step="1" style="width:68px"></label>
+        <span id="baseBpmLbl" style="font-size:12px;color:#666"></span>
+        <label>音量 <input type="range" id="vol" min="0" max="200" step="5" value="100" style="width:90px"> <span id="volLbl">100%</span></label>
+      </div>
 
       <div class="row more">
         <label>播放來源 <select id="mode">
@@ -362,6 +367,45 @@ function patchScoreSvg(root) {
 
 // （已停用）原本的 MutationObserver 會反覆呼叫 patchScoreSvg
 
+let baseBpm = 120, curRate = 1, curVol = 1;
+function snapRate(r) {
+  r = Math.min(Math.max(r, 0.25), 2);
+  if (mode === "video" && yt && yt.getAvailablePlaybackRates) {
+    try {
+      const a = yt.getAvailablePlaybackRates();
+      if (a && a.length) return a.reduce((p, c) => Math.abs(c - r) < Math.abs(p - r) ? c : p);
+    } catch (e) {}
+  }
+  return r;
+}
+function setSpeed(r, quiet) {
+  const snapped = snapRate(r);
+  curRate = snapped;
+  try { api.playbackSpeed = snapped; } catch (e) {}
+  $("#bpm").value = Math.round(baseBpm * snapped);
+  const sel = $("#speed");
+  let opt = [...sel.options].find(o => !o.dataset.custom && Math.abs(Number(o.value) - snapped) < 0.001);
+  if (!opt) {
+    opt = sel.querySelector("option[data-custom]") || new Option("", "");
+    opt.dataset.custom = "1"; opt.value = String(snapped); opt.textContent = Math.round(snapped * 100) + "%";
+    if (!opt.parentNode) sel.add(opt);
+  }
+  sel.value = opt.value;
+  if (!quiet && Math.abs(r - snapped) > 0.01)
+    msg("影片模式只能使用 YouTube 提供的速度，已調整為 " + Math.round(baseBpm * snapped) + " BPM（" + Math.round(snapped * 100) + "%）");
+}
+function applyVol() {
+  const v = curVol;
+  $("#volLbl").textContent = Math.round(v * 100) + "%" + (mode !== "synth" && v > 1 ? "（影片上限100%）" : "");
+  try {
+    if (mode === "synth") {
+      const ts = (api.tracks && api.tracks.length) ? api.tracks : (api.score ? [api.score.tracks[0]] : []);
+      if (ts.length) api.changeTrackVolume(ts, v);
+    } else if (mode === "audio") audioEl.volume = Math.min(1, v);
+    else if (yt && yt.setVolume) yt.setVolume(Math.min(100, Math.round(v * 100)));
+  } catch (e) {}
+}
+
 function createApi() {
   if (window.__DRUM_PATCH__) { if (!document.title.includes("v2")) document.title += " [休止符修正 v2]"; }
   else console.warn("目前載入的不是修改版 alphaTab.min.js");
@@ -394,11 +438,16 @@ function createApi() {
     const drum = score.tracks.findIndex(t => t.staves.some(s => s.isPercussion));
     const idx = drum >= 0 ? drum : 0;
     sel.value = idx; $("#trackWrap").hidden = score.tracks.length < 2;
+    baseBpm = Math.round(score.tempo) || 120;
+    $("#baseBpmLbl").textContent = "原速 " + baseBpm;
+    $("#baseBpmLbl").title = "以第一小節的速度為基準";
+    $("#bpm").value = Math.round(baseBpm * curRate);
     api.renderTracks([score.tracks[idx]]);
   });
   api.playerReady.on(() => {
     bind();
-    try { api.playbackSpeed = Number($("#speed").value); api.isLooping = $("#loop").checked; } catch (e) {}
+    try { api.isLooping = $("#loop").checked; } catch (e) {}
+    setSpeed(curRate, true); applyVol();
     $("#play").disabled = false; $("#stop").disabled = false; msg("");
     patchScoreSvg($("#score"));
   });
@@ -549,7 +598,7 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 
-$("#play").onclick = () => { if (ac) ac.resume(); api.playPause(); };
+$("#play").onclick = () => { if (ac) ac.resume(); applyVol(); api.playPause(); };
 $("#met").onchange = e => { if (e.target.checked) { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); met.last = -1; } };
 $("#metStep").onchange = () => { met.last = -1; };
 $("#mode").onchange = e => {
@@ -564,7 +613,9 @@ $("#stop").onclick = () => {
   if (mode === "audio") { audioEl.pause(); audioEl.currentTime = offset; }
   else if (yt && yt.pauseVideo) { yt.pauseVideo(); yt.seekTo(offset, true); }
 };
-$("#speed").onchange = e => { api.playbackSpeed = Number(e.target.value); };
+$("#speed").onchange = e => setSpeed(Number(e.target.value));
+$("#bpm").onchange = e => { const b = Number(e.target.value); if (b > 0) setSpeed(b / baseBpm); };
+$("#vol").oninput = e => { curVol = Number(e.target.value) / 100; applyVol(); };
 $("#loop").onchange = e => { api.isLooping = e.target.checked; };
 $("#clearSel").onclick = () => { api.playbackRange = null; api.highlightPlaybackRange && api.highlightPlaybackRange(null, null); };
 
@@ -591,7 +642,7 @@ $("#layout").onchange = e => {
   api.settings.display.layoutMode = e.target.value === "horizontal" ? alphaTab.LayoutMode.Horizontal : alphaTab.LayoutMode.Page;
   api.updateSettings(); api.render();
 };
-$("#track").onchange = e => api.renderTracks([api.score.tracks[Number(e.target.value)]]);
+$("#track").onchange = e => { api.renderTracks([api.score.tracks[Number(e.target.value)]]); setTimeout(applyVol, 400); };
 $("#search").oninput = renderList;
 
 $("#previewStudent").onclick = () => {
