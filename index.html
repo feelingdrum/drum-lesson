@@ -77,9 +77,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #shareUrlBox{width:100%;font-size:12px;background:#f4f4f2;color:#333;margin-bottom:10px}
 
 .mobile-only{display:none}
-#splitter{flex:none;position:relative;background:#e4e1db;border-radius:8px;height:16px;margin:6px 0 2px;cursor:row-resize;touch-action:none;user-select:none;-webkit-user-select:none}
-#splitter::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:4px;margin:-2px 0 0 -22px;border-radius:2px;background:#9b958a}
-#splitter:hover,#splitter.on{background:#d3cfc6}
+#splitter{flex:none;position:relative;background:#cfc8ba;border:1px solid #b3ab9b;border-radius:10px;height:22px;margin:6px 0 2px;cursor:row-resize;touch-action:none;user-select:none;-webkit-user-select:none}
+#splitter::after{content:"";position:absolute;left:50%;top:50%;width:56px;height:5px;margin:-3px 0 0 -28px;border-radius:3px;background:#6f685b}
+#splitter:hover,#splitter.on{background:#bdb5a5}
 body.dragging{user-select:none;-webkit-user-select:none}
 @media (max-width:800px), (max-height:500px){
   #app{display:block}
@@ -102,8 +102,8 @@ body.dragging{user-select:none;-webkit-user-select:none}
   #vwrap{width:100%;flex:none}
   #title{font-size:13px}
   #scoreWrap{margin-top:0}
-  #splitter{width:16px;height:auto;margin:0;cursor:col-resize;align-self:stretch}
-  #splitter::after{width:4px;height:44px;margin:-22px 0 0 -2px}
+  #splitter{width:22px;height:auto;margin:0;cursor:col-resize;align-self:stretch}
+  #splitter::after{width:5px;height:56px;margin:-28px 0 0 -3px}
 }
 </style>
 </head>
@@ -187,12 +187,12 @@ body.dragging{user-select:none;-webkit-user-select:none}
         </span>
         <label>縮放 <select id="zoom"><option value="0.55">55%</option><option value="0.7">70%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option></select></label>
         <label>每行小節 <select id="bpr"><option value="-1" selected>自動</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select></label>
-        <label>捲動 <select id="scrollMode"><option value="offscreen" selected>出畫面才捲</option><option value="continuous">每換行就捲</option><option value="smooth">平滑持續</option><option value="off">不自動捲</option></select></label>
+        <label>捲動 <select id="scrollMode"><option value="ahead" selected>倒數第二行就捲動</option><option value="continuous">每換行就捲</option><option value="smooth">平滑持續</option><option value="off">不自動捲</option></select></label>
         <label>版面 <select id="layout"><option value="page">自動換行</option><option value="horizontal">橫向捲動</option></select></label>
         <label id="trackWrap" hidden>聲部 <select id="track"></select></label>
       </div>
 
-      <div id="hint" class="more">點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
+      <div id="hint" class="more"><span style="float:right;color:#999;font-size:11px">介面 v4</span>點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
       <div id="msg"></div>
     </div>
   </div>
@@ -380,7 +380,34 @@ function patchScoreSvg(root) {
 
 let baseBpm = 120, curRate = 1, curVol = 1;
 function scrollModeOf(v) {
-  return { off: alphaTab.ScrollMode.Off, continuous: alphaTab.ScrollMode.Continuous, smooth: alphaTab.ScrollMode.Smooth }[v] ?? alphaTab.ScrollMode.OffScreen;
+  const horiz = $("#layout").value === "horizontal";
+  if (v === "ahead") return horiz ? alphaTab.ScrollMode.Smooth : alphaTab.ScrollMode.Off;
+  return { off: alphaTab.ScrollMode.Off, continuous: alphaTab.ScrollMode.Continuous, smooth: alphaTab.ScrollMode.Smooth }[v] ?? alphaTab.ScrollMode.Continuous;
+}
+// 「倒數第二行就捲動」：游標走到畫面上倒數第二個完整可見的譜行時，把目前這一行捲到最上方
+let lastAhead = { target: -1, t: 0 };
+function aheadScroll(beat) {
+  if ($("#scrollMode").value !== "ahead" || $("#layout").value === "horizontal") return;
+  const bl = api.boundsLookup; if (!bl || !bl.isFinished || !bl.staffSystems.length) return;
+  const bb = bl.findBeat(beat); if (!bb) return;
+  const systems = bl.staffSystems;
+  const cy = bb.visualBounds.y + bb.visualBounds.h / 2;
+  const idx = systems.findIndex(s => cy >= s.visualBounds.y && cy < s.visualBounds.y + s.visualBounds.h);
+  if (idx < 0) return;
+  const wrap = $("#scoreWrap"), off = $("#score").offsetTop, st = wrap.scrollTop, ch = wrap.clientHeight;
+  let a = -1, b = -1;
+  systems.forEach((s, i) => {
+    const top = off + s.visualBounds.y, bot = top + s.visualBounds.h;
+    if (top >= st - 4 && bot <= st + ch + 4) { if (a < 0) a = i; b = i; }
+  });
+  const trigger = a < 0 ? -1 : Math.max(a, b - 1);
+  if (!(a < 0 || idx < a || idx >= trigger)) return;
+  const target = Math.max(0, off + systems[idx].visualBounds.y - 6);
+  if (Math.abs(target - st) < 6) return;
+  const now = performance.now();
+  if (Math.abs(target - lastAhead.target) < 2 && now - lastAhead.t < 900) return;
+  lastAhead = { target, t: now };
+  wrap.scrollTo({ top: target, behavior: "smooth" });
 }
 function snapRate(r) {
   r = Math.min(Math.max(r, 0.25), 2);
@@ -460,6 +487,7 @@ function createApi() {
     $("#bpm").value = Math.round(baseBpm * curRate);
     api.renderTracks([score.tracks[idx]]);
   });
+  api.playedBeatChanged.on(aheadScroll);
   api.playerReady.on(() => {
     bind();
     try { api.isLooping = $("#loop").checked; } catch (e) {}
@@ -656,6 +684,7 @@ $("#tapSync").onclick = () => {
 $("#zoom").onchange = e => { api.settings.display.scale = Number(e.target.value); api.updateSettings(); api.render(); };
 $("#layout").onchange = e => {
   api.settings.display.layoutMode = e.target.value === "horizontal" ? alphaTab.LayoutMode.Horizontal : alphaTab.LayoutMode.Page;
+  api.settings.player.scrollMode = scrollModeOf($("#scrollMode").value);
   api.updateSettings(); api.render();
 };
 $("#track").onchange = e => { api.renderTracks([api.score.tracks[Number(e.target.value)]]); setTimeout(applyVol, 400); };
