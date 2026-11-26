@@ -164,17 +164,25 @@ body.dragging{user-select:none;-webkit-user-select:none}
         <button id="moreBtn" class="mobile-only" type="button">⚙ 更多</button>
       </div>
       <div class="row">
+        <span style="font-size:13px;color:#555">發聲：</span>
+        <label><input type="checkbox" id="srcYt" checked> 影片</label>
+        <label><input type="checkbox" id="srcMp3"> MP3</label>
+        <label><input type="checkbox" id="srcSynth"> 譜面鼓聲</label>
+      </div>
+      <div class="row">
         <label>BPM <input type="number" id="bpm" min="20" max="400" step="1" style="width:68px"></label>
         <span id="baseBpmLbl" style="font-size:12px;color:#666"></span>
-        <label>音量 <input type="range" id="vol" min="0" max="200" step="5" value="100" style="width:90px"> <span id="volLbl">100%</span></label>
+        <label>鼓聲 <input type="range" id="vol" min="0" max="300" step="5" value="150" style="width:80px"> <span id="volLbl">150%</span></label>
+        <label>影音 <input type="range" id="volM" min="0" max="100" step="5" value="100" style="width:80px"> <span id="volMLbl">100%</span></label>
       </div>
 
       <div class="row more">
-        <label>播放來源 <select id="mode">
+        <select id="mode" hidden>
           <option value="video">YouTube 影片</option>
           <option value="audio">MP3 / WAV 音檔</option>
           <option value="synth">譜面鼓聲（無原曲）</option>
-        </select></label>
+        </select>
+        <label>鼓組 <select id="kit"><option value="0">標準</option><option value="8">Room</option><option value="16" selected>Power</option></select></label>
         <label>節拍器音量 <input type="range" id="metVol" min="0.1" max="1" step="0.05" value="0.6" style="width:80px"></label>
       </div>
 
@@ -192,7 +200,7 @@ body.dragging{user-select:none;-webkit-user-select:none}
         <label id="trackWrap" hidden>聲部 <select id="track"></select></label>
       </div>
 
-      <div id="hint" class="more"><span style="float:right;color:#999;font-size:11px">介面 v4</span>點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
+      <div id="hint" class="more"><span style="float:right;color:#999;font-size:11px">介面 v6</span>點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
       <div id="msg"></div>
     </div>
   </div>
@@ -220,10 +228,11 @@ body.dragging{user-select:none;-webkit-user-select:none}
 <script>
 const $ = s => document.querySelector(s);
 const FONT = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.9.0/dist/font/";
-const SF = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.9.0/dist/soundfont/sonivox.sf2";
+const SF = "drums.sf2?v=1";
 
 let songs = [], yt, api, timer, offset = 0, pending = null, curVideo = null, ytLoaded = false;
 let mode = "video", lastGp = null, ac = null, currentSongObj = null;
+const src = { yt: true, mp3: false, synth: false };
 const met = { last: -1 };
 const audioEl = $("#htmlAudio");
 
@@ -244,12 +253,28 @@ const getMediaTime = () => mode === "audio" ? audioEl.currentTime : (yt && yt.ge
 const getMediaDur = () => mode === "audio" ? (audioEl.duration || 0) : (yt && yt.getDuration ? yt.getDuration() : 0);
 const pos = () => Math.max(0, (getMediaTime() - offset) * 1000);
 
+// ---- 多來源同步：主時鐘（mode）以外被勾選的來源當「跟隨者」 ----
+const slaves = () => { const l = []; if (mode !== "video" && src.yt) l.push("yt"); if (mode !== "audio" && src.mp3) l.push("audio"); return l; };
+const sTime = n => n === "yt" ? ((yt && yt.getCurrentTime) ? yt.getCurrentTime() : 0) : audioEl.currentTime;
+const sSeek = (n, t) => { t = Math.max(0, t); try { n === "yt" ? yt.seekTo(t, true) : (audioEl.currentTime = t); } catch (e) {} };
+const sPlay = n => { try { n === "yt" ? yt.playVideo() : audioEl.play().catch(() => {}); } catch (e) {} };
+const sPause = n => { try { n === "yt" ? yt.pauseVideo() : audioEl.pause(); } catch (e) {} };
+const sRate = (n, r) => { try { n === "yt" ? yt.setPlaybackRate(r) : (audioEl.playbackRate = r); } catch (e) {} };
+function slavesStart(t) { slaves().forEach(n => { sSeek(n, t); sRate(n, curRate); sPlay(n); }); }
+function slavesPause() { slaves().forEach(sPause); }
+let lastDrift = 0;
+function slavesDrift(t) {
+  const now = performance.now(); if (now - lastDrift < 600) return; lastDrift = now;
+  slaves().forEach(n => { if (Math.abs(sTime(n) - t) > 0.2) sSeek(n, t); });
+}
+
 const handler = {
   get backingTrackDuration() { return Math.max(0, (getMediaDur() - offset) * 1000); },
   get playbackRate() { return mode === "audio" ? audioEl.playbackRate : yt.getPlaybackRate(); },
   set playbackRate(v) {
     if (mode === "audio") audioEl.playbackRate = v;
     else if (yt && yt.setPlaybackRate) yt.setPlaybackRate(v);
+    slaves().forEach(n => sRate(n, v));
   },
   get masterVolume() { return mode === "audio" ? audioEl.volume : yt.getVolume() / 100; },
   set masterVolume(v) {
@@ -260,6 +285,7 @@ const handler = {
     const target = Math.max(0, ms / 1000 + offset);
     if (mode === "audio") audioEl.currentTime = target;
     else if (yt && yt.seekTo) yt.seekTo(target, true);
+    slaves().forEach(n => sSeek(n, target));
   },
   play() {
     if (getMediaTime() < offset) {
@@ -269,10 +295,12 @@ const handler = {
     if (mode === "audio") audioEl.play().catch(e => msg("音檔播放失敗，請先載入音檔"));
     else yt.playVideo();
     startTimer();
+    slavesStart(getMediaTime());
   },
   pause() {
     if (mode === "audio") audioEl.pause();
     else if (yt && yt.pauseVideo) yt.pauseVideo();
+    slavesPause();
     stopTimer();
   }
 };
@@ -281,6 +309,7 @@ const startTimer = () => {
   stopTimer();
   timer = setInterval(() => {
     if (api && api.player && api.player.output) api.player.output.updatePosition(pos());
+    if (slaves().length) slavesDrift(getMediaTime());
     if (mode === "audio" && audioEl.duration) {
       $("#audioProgress").value = (audioEl.currentTime / audioEl.duration) * 100;
       $("#audioTime").textContent = `${fmtTime(audioEl.currentTime)} / ${fmtTime(audioEl.duration)}`;
@@ -378,7 +407,15 @@ function patchScoreSvg(root) {
 
 // （已停用）原本的 MutationObserver 會反覆呼叫 patchScoreSvg
 
-let baseBpm = 120, curRate = 1, curVol = 1;
+let baseBpm = 120, curRate = 1, curVol = 1.5, curMVol = 1, curKit = 16;
+const setKit = score => score.tracks.forEach(t => { if (t.staves.some(s => s.isPercussion)) t.playbackInfo.program = curKit; });
+function updateScrollOffsets() {
+  if (!api) return;
+  const horiz = $("#layout").value === "horizontal";
+  api.settings.player.scrollOffsetX = horiz ? -Math.round($("#scoreWrap").clientWidth / 2) : 0;
+  api.settings.player.scrollOffsetY = 0;
+  try { api.updateSettings(); } catch (e) {}
+}
 function scrollModeOf(v) {
   const horiz = $("#layout").value === "horizontal";
   if (v === "ahead") return horiz ? alphaTab.ScrollMode.Smooth : alphaTab.ScrollMode.Off;
@@ -401,7 +438,9 @@ function aheadScroll(beat) {
     if (top >= st - 4 && bot <= st + ch + 4) { if (a < 0) a = i; b = i; }
   });
   const trigger = a < 0 ? -1 : Math.max(a, b - 1);
-  if (!(a < 0 || idx < a || idx >= trigger)) return;
+  const lb = systems[idx].bars && systems[idx].bars.length ? systems[idx].bars[systems[idx].bars.length - 1] : null;
+  const atEnd = lb ? (bb.visualBounds.x >= lb.visualBounds.x + lb.visualBounds.w * 0.5) : true;
+  if (!(a < 0 || idx < a || idx > trigger || (idx === trigger && atEnd))) return;
   const target = Math.max(0, off + systems[idx].visualBounds.y - 6);
   if (Math.abs(target - st) < 6) return;
   const now = performance.now();
@@ -411,7 +450,7 @@ function aheadScroll(beat) {
 }
 function snapRate(r) {
   r = Math.min(Math.max(r, 0.25), 2);
-  if (mode === "video" && yt && yt.getAvailablePlaybackRates) {
+  if (src.yt && yt && yt.getAvailablePlaybackRates) {
     try {
       const a = yt.getAvailablePlaybackRates();
       if (a && a.length) return a.reduce((p, c) => Math.abs(c - r) < Math.abs(p - r) ? c : p);
@@ -423,6 +462,7 @@ function setSpeed(r, quiet) {
   const snapped = snapRate(r);
   curRate = snapped;
   try { api.playbackSpeed = snapped; } catch (e) {}
+  slaves().forEach(n => sRate(n, snapped));
   $("#bpm").value = Math.round(baseBpm * snapped);
   const sel = $("#speed");
   let opt = [...sel.options].find(o => !o.dataset.custom && Math.abs(Number(o.value) - snapped) < 0.001);
@@ -436,14 +476,15 @@ function setSpeed(r, quiet) {
     msg("影片模式只能使用 YouTube 提供的速度，已調整為 " + Math.round(baseBpm * snapped) + " BPM（" + Math.round(snapped * 100) + "%）");
 }
 function applyVol() {
-  const v = curVol;
-  $("#volLbl").textContent = Math.round(v * 100) + "%" + (mode !== "synth" && v > 1 ? "（影片上限100%）" : "");
+  $("#volLbl").textContent = Math.round(curVol * 100) + "%";
+  $("#volMLbl").textContent = Math.round(curMVol * 100) + "%";
+  try { if (yt && yt.setVolume) yt.setVolume(Math.round(curMVol * 100)); } catch (e) {}
+  try { audioEl.volume = Math.min(1, curMVol); } catch (e) {}
   try {
     if (mode === "synth") {
       const ts = (api.tracks && api.tracks.length) ? api.tracks : (api.score ? [api.score.tracks[0]] : []);
-      if (ts.length) api.changeTrackVolume(ts, v);
-    } else if (mode === "audio") audioEl.volume = Math.min(1, v);
-    else if (yt && yt.setVolume) yt.setVolume(Math.min(100, Math.round(v * 100)));
+      if (ts.length) api.changeTrackVolume(ts, curVol);
+    }
   } catch (e) {}
 }
 
@@ -469,6 +510,7 @@ function createApi() {
       ...(isExternal ? {} : { soundFont: SF }),
       scrollElement: $("#scoreWrap"),
       scrollMode: scrollModeOf($("#scrollMode").value),
+      scrollOffsetX: $("#layout").value === "horizontal" ? -Math.round($("#scoreWrap").clientWidth / 2) : 0,
       enableCursor: true, enableUserInteraction: true
     }
   });
@@ -485,8 +527,20 @@ function createApi() {
     $("#baseBpmLbl").textContent = "原速 " + baseBpm;
     $("#baseBpmLbl").title = "以第一小節的速度為基準";
     $("#bpm").value = Math.round(baseBpm * curRate);
+    setKit(score);
     api.renderTracks([score.tracks[idx]]);
   });
+  if (!isExternal) {
+    api.playerStateChanged.on(e => {
+      if (e.state === 1) slavesStart(api.timePosition / 1000 + offset);
+      else { slavesPause(); if (e.stopped) slaves().forEach(n => sSeek(n, offset)); }
+    });
+    api.playerPositionChanged.on(e => {
+      const t = e.currentTime / 1000 + offset;
+      if (e.isSeek) slaves().forEach(n => sSeek(n, t));
+      else if (api.playerState === 1) slavesDrift(t);
+    });
+  }
   api.playedBeatChanged.on(aheadScroll);
   api.playerReady.on(() => {
     bind();
@@ -562,14 +616,30 @@ function waitDuration(f, n) { (yt.getDuration() > 0 || n > 30) ? f() : setTimeou
 
 function updateMediaUI() {
   const ytDiv = $("#yt"), audioBox = $("#audioBox");
-  if (mode === "audio") {
-    ytDiv.style.display = "none";
-    audioBox.classList.add("show");
-  } else {
-    ytDiv.style.display = "block";
-    audioBox.classList.remove("show");
-    $("#vwrap").style.opacity = mode === "video" ? 1 : 0.35;
+  if (src.yt) { ytDiv.style.display = "block"; audioBox.classList.remove("show"); $("#vwrap").style.opacity = 1; }
+  else if (src.mp3) { ytDiv.style.display = "none"; audioBox.classList.add("show"); }
+  else { ytDiv.style.display = "block"; audioBox.classList.remove("show"); $("#vwrap").style.opacity = 0.35; }
+}
+function setSources(o, reload = true) {
+  Object.assign(src, o);
+  if (!src.yt && !src.mp3 && !src.synth) src.synth = true;
+  $("#srcYt").checked = src.yt; $("#srcMp3").checked = src.mp3; $("#srcSynth").checked = src.synth;
+  const m = src.synth ? "synth" : src.mp3 ? "audio" : "video";
+  const changed = m !== mode;
+  stopTimer();
+  try { api.stop(); } catch (_) {}
+  try { yt.pauseVideo(); } catch (_) {}
+  try { audioEl.pause(); } catch (_) {}
+  mode = m; $("#mode").value = m;
+  updateMediaUI();
+  if (src.yt && currentSongObj && currentSongObj.yt) {
+    const id = ytId(currentSongObj.yt);
+    if (id && id !== curVideo) { curVideo = id; try { yt.cueVideoById({ videoId: id, startSeconds: offset }); } catch (_) {} }
   }
+  if (changed) {
+    createApi();
+    if (lastGp && reload) { msg("載入中…"); $("#play").disabled = true; $("#stop").disabled = true; api.load(copyGp()); }
+  } else { applyVol(); setSpeed(curRate, true); }
 }
 
 function loadSong(s) {
@@ -580,9 +650,7 @@ function loadSong(s) {
   offset = Number(s.offset) || 0; $("#offset").value = offset;
   lastGp = s.gp;
 
-  if (s.mp3 && !s.yt && mode === "video") {
-    mode = "audio"; $("#mode").value = "audio"; createApi();
-  }
+  if (s.mp3 && !s.yt && !src.mp3) setSources({ yt: false, mp3: true }, false);
   updateMediaUI();
 
   if (s.mp3) {
@@ -619,7 +687,8 @@ function route() {
   const p = new URLSearchParams(location.search);
   const hashId = decodeURIComponent(location.hash.slice(1));
 
-  if (p.get("mode")) { mode = p.get("mode"); $("#mode").value = mode; createApi(); }
+  if (p.get("src")) { const ks = p.get("src").split(","); setSources({ yt: ks.includes("yt"), mp3: ks.includes("mp3"), synth: ks.includes("synth") }, false); }
+  else if (p.get("mode")) { const m = p.get("mode"); setSources({ yt: m === "video", mp3: m === "audio", synth: m === "synth" }, false); }
 
   if (p.get("gp") && !hashId) {
     loadSong({
@@ -645,21 +714,20 @@ window.addEventListener("hashchange", route);
 $("#play").onclick = () => { if (ac) ac.resume(); applyVol(); api.playPause(); };
 $("#met").onchange = e => { if (e.target.checked) { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); met.last = -1; } };
 $("#metStep").onchange = () => { met.last = -1; };
-$("#mode").onchange = e => {
-  mode = e.target.value; stopTimer();
-  try { yt.pauseVideo(); audioEl.pause(); } catch (_) {}
-  updateMediaUI();
-  createApi();
-  if (lastGp) { msg("載入中…"); $("#play").disabled = true; $("#stop").disabled = true; api.load(copyGp()); }
-};
+["#srcYt", "#srcMp3", "#srcSynth"].forEach(id => $(id).onchange = () => setSources({ yt: $("#srcYt").checked, mp3: $("#srcMp3").checked, synth: $("#srcSynth").checked }));
 $("#stop").onclick = () => {
   api.stop(); stopTimer();
-  if (mode === "audio") { audioEl.pause(); audioEl.currentTime = offset; }
-  else if (yt && yt.pauseVideo) { yt.pauseVideo(); yt.seekTo(offset, true); }
+  try { audioEl.pause(); audioEl.currentTime = offset; } catch (e) {}
+  try { yt.pauseVideo(); yt.seekTo(offset, true); } catch (e) {}
 };
 $("#speed").onchange = e => setSpeed(Number(e.target.value));
 $("#bpm").onchange = e => { const b = Number(e.target.value); if (b > 0) setSpeed(b / baseBpm); };
+$("#kit").onchange = e => {
+  curKit = Number(e.target.value);
+  if (api && api.score) { try { api.stop(); } catch (_) {} setKit(api.score); try { api.loadMidiForScore(); } catch (_) {} }
+};
 $("#vol").oninput = e => { curVol = Number(e.target.value) / 100; applyVol(); };
+$("#volM").oninput = e => { curMVol = Number(e.target.value) / 100; applyVol(); };
 $("#loop").onchange = e => { api.isLooping = e.target.checked; };
 $("#clearSel").onclick = () => { api.playbackRange = null; api.highlightPlaybackRange && api.highlightPlaybackRange(null, null); };
 
@@ -685,6 +753,7 @@ $("#zoom").onchange = e => { api.settings.display.scale = Number(e.target.value)
 $("#layout").onchange = e => {
   api.settings.display.layoutMode = e.target.value === "horizontal" ? alphaTab.LayoutMode.Horizontal : alphaTab.LayoutMode.Page;
   api.settings.player.scrollMode = scrollModeOf($("#scrollMode").value);
+  updateScrollOffsets();
   api.updateSettings(); api.render();
 };
 $("#track").onchange = e => { api.renderTracks([api.score.tracks[Number(e.target.value)]]); setTimeout(applyVol, 400); };
@@ -710,8 +779,9 @@ $("#openShare").onclick = () => {
   const u = new URL(location.href);
   u.searchParams.set("student", "1");
   u.searchParams.set("offset", offset);
-  if (mode !== "video") u.searchParams.set("mode", mode);
-  else u.searchParams.delete("mode");
+  u.searchParams.delete("mode");
+  const ks = ["yt", "mp3", "synth"].filter(k => src[k]).join(",");
+  if (ks !== "yt") u.searchParams.set("src", ks); else u.searchParams.delete("src");
 
   const finalUrl = u.toString();
   $("#shareUrlBox").value = finalUrl;
@@ -735,9 +805,7 @@ function handleAudioFile(file) {
   const url = URL.createObjectURL(file);
   audioEl.src = url;
   $("#audioLabel").textContent = "🎵 " + file.name;
-  mode = "audio"; $("#mode").value = "audio";
-  updateMediaUI(); createApi();
-  if (lastGp) api.load(copyGp());
+  setSources({ yt: false, mp3: true }, true);
 }
 $("#inlineMp3").onchange = e => handleAudioFile(e.target.files[0]);
 
@@ -766,7 +834,7 @@ function splitFromPointer(e) {
 }
 (function () {
   const sp = $("#splitter"); let dragging = false, last = null, timer = null;
-  const rerender = () => { clearTimeout(timer); timer = setTimeout(() => { try { api.render(); } catch (e) {} }, 150); };
+  const rerender = () => { clearTimeout(timer); timer = setTimeout(() => { try { updateScrollOffsets(); api.render(); } catch (e) {} }, 150); };
   sp.addEventListener("pointerdown", e => { dragging = true; sp.setPointerCapture(e.pointerId); sp.classList.add("on"); document.body.classList.add("dragging"); e.preventDefault(); });
   sp.addEventListener("pointermove", e => { if (!dragging) return; last = splitFromPointer(e); applySplit(last); });
   const end = () => { if (!dragging) return; dragging = false; sp.classList.remove("on"); document.body.classList.remove("dragging"); if (last != null) store.set(splitKey(), Math.round(last)); rerender(); };
@@ -792,7 +860,7 @@ $("#goTry").onclick = () => {
   const r = new FileReader();
   r.onload = () => {
     const mp3Url = mp3 ? URL.createObjectURL(mp3) : "";
-    if (!u && mp3) { mode = "audio"; $("#mode").value = "audio"; createApi(); }
+    if (!u && mp3) setSources({ yt: false, mp3: true }, false);
     loadSong({
       title: f.name.replace(/\.[^.]+$/, ""),
       gp: new Uint8Array(r.result),
