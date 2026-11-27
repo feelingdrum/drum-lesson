@@ -76,6 +76,44 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #qrCanvas{margin:12px auto;display:block;border:8px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.1);border-radius:6px}
 #shareUrlBox{width:100%;font-size:12px;background:#f4f4f2;color:#333;margin-bottom:10px}
 
+/* ---- v7 介面：主控制列 + 設定面板 ---- */
+[hidden]{display:none !important}
+#transport{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button.big{min-width:104px;font-weight:700}
+.field{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#555}
+#baseBpmLbl{font-size:12px;color:#888}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-size:14px;user-select:none;-webkit-user-select:none}
+.chip input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--acc)}
+.chip:has(input:checked){background:#ffe8d9;border-color:var(--acc);color:var(--acc);font-weight:600}
+#tip{color:#1d4ed8;font-size:13px;min-height:0}#tip:empty{display:none}
+#panel{display:none;position:fixed;z-index:60;right:16px;top:64px;width:380px;max-height:calc(100vh - 90px);overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+#panel.open{display:block}
+#panelHead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}
+#panelHead button{padding:4px 10px}
+#tabs{display:flex;gap:2px;overflow-x:auto;padding:6px 8px 0;border-bottom:1px solid var(--line);position:sticky;top:49px;background:#fff;z-index:2}
+.tab{border:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0;background:none;padding:8px 10px;font-weight:600;color:#666;white-space:nowrap}
+.tab.on{color:var(--acc);border-bottom-color:var(--acc)}
+.sec{display:none;padding:12px;flex-direction:column;gap:12px}
+.sec.on{display:flex}
+.sec .item{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px}
+.sec .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.sec .ctrl{display:inline-flex;align-items:center;gap:8px}
+.sec .ctrl input[type=range]{width:120px;accent-color:var(--acc)}
+.sec small{color:#777;font-size:12px;line-height:1.5}
+#rangeInfo{font-size:12px;color:#666}
+#selRange.on{background:#dbeafe;border-color:#3b82f6;color:#1d4ed8;font-weight:600}
+#panelFoot{padding:4px 12px 10px;color:#aaa;font-size:11px;text-align:right}
+#countOverlay{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:70;display:none;min-width:120px;height:120px;border-radius:60px;padding:0 24px;align-items:center;justify-content:center;background:rgba(0,0,0,.62);color:#fff;font-size:72px;font-weight:700;pointer-events:none;font-variant-numeric:tabular-nums}
+#countOverlay.show{display:flex}
+#scoreWrap.selecting{outline:3px dashed #3b82f6;outline-offset:-3px}
+@media (max-width:800px),(max-height:500px){
+  #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:55vh;max-height:55dvh;border-radius:16px 16px 0 0}
+  #transport{gap:6px}
+  #transport button,#transport select,#transport input{min-height:40px}
+  .chip{padding:8px 12px}
+  .sec .item{min-height:40px}
+}
+
 .mobile-only{display:none}
 #splitter{flex:none;position:relative;background:#cfc8ba;border:1px solid #b3ab9b;border-radius:10px;height:22px;margin:6px 0 2px;cursor:row-resize;touch-action:none;user-select:none;-webkit-user-select:none}
 #splitter::after{content:"";position:absolute;left:50%;top:50%;width:56px;height:5px;margin:-3px 0 0 -28px;border-radius:3px;background:#6f685b}
@@ -92,7 +130,6 @@ body.dragging{user-select:none;-webkit-user-select:none}
   #ctl .row{gap:6px;font-size:14px}
   #ctl select,#ctl button,#ctl input{padding:5px 7px}
   .mobile-only{display:inline-block}
-  #ctl:not(.show-more) .more{display:none}
   #scoreWrap{flex:1;min-height:0;height:auto;margin-top:0;padding:4px}
   #splitter{margin:4px 0}
 }
@@ -152,61 +189,74 @@ body.dragging{user-select:none;-webkit-user-select:none}
         </div>
       </div>
 
-      <div class="row">
-        <button class="primary" id="play" disabled>▶ 播放</button>
-        <button id="stop" disabled>■ 停止</button>
-        <label>速度 <select id="speed">
-          <option>0.5</option><option>0.6</option><option>0.75</option><option>0.85</option><option selected>1</option><option>1.15</option><option>1.25</option></select></label>
-        <label><input type="checkbox" id="loop"> 循環選取區</label>
-        <button id="clearSel">清除選取</button>
-        <label><input type="checkbox" id="met"> 節拍器</label>
-        <select id="metStep"><option value="960">4分音符</option><option value="480">8分音符</option></select>
-        <button id="moreBtn" class="mobile-only" type="button">⚙ 更多</button>
+      <div id="transport">
+        <button class="primary big" id="play" disabled>▶ 播放</button>
+        <button id="stop" disabled title="停止並回到開頭">■ 停止</button>
+        <label class="field">速度 <select id="speed"><option>0.5</option><option>0.6</option><option>0.75</option><option>0.85</option><option selected>1</option><option>1.15</option><option>1.25</option></select></label>
+        <label class="field">BPM <input type="number" id="bpm" min="20" max="400" step="1" style="width:68px"></label><span id="baseBpmLbl"></span>
+        <label class="chip" title="開啟節拍器"><input type="checkbox" id="met"> 🎵 節拍器</label>
+        <button id="moreBtn" type="button" aria-expanded="false" title="更多設定">⚙ 設定</button>
       </div>
-      <div class="row">
-        <span style="font-size:13px;color:#555">發聲：</span>
-        <label><input type="checkbox" id="srcYt" checked> 影片</label>
-        <label><input type="checkbox" id="srcMp3"> MP3</label>
-        <label><input type="checkbox" id="srcSynth"> 譜面鼓聲</label>
-      </div>
-      <div class="row">
-        <label>BPM <input type="number" id="bpm" min="20" max="400" step="1" style="width:68px"></label>
-        <span id="baseBpmLbl" style="font-size:12px;color:#666"></span>
-        <label>鼓聲 <input type="range" id="vol" min="0" max="300" step="5" value="150" style="width:80px"> <span id="volLbl">150%</span></label>
-        <label>影音 <input type="range" id="volM" min="0" max="100" step="5" value="100" style="width:80px"> <span id="volMLbl">100%</span></label>
-      </div>
-
-      <div class="row more">
-        <select id="mode" hidden>
-          <option value="video">YouTube 影片</option>
-          <option value="audio">MP3 / WAV 音檔</option>
-          <option value="synth">譜面鼓聲（無原曲）</option>
-        </select>
-        <label>鼓組 <select id="kit"><option value="0">標準</option><option value="8">Room</option><option value="16" selected>Power</option></select></label>
-        <label>節拍器音量 <input type="range" id="metVol" min="0.1" max="1" step="0.05" value="0.6" style="width:80px"></label>
-      </div>
-
-      <div class="row more">
-        <span class="teacher-only nudge-group" title="調整影片/音檔第一拍起始秒數">
-          <label>起始(秒) <input id="offset" type="number" step="0.01" value="0" style="width:76px"></label>
-          <button type="button" onclick="nudgeOffset(-0.05)">-0.05</button>
-          <button type="button" onclick="nudgeOffset(0.05)">+0.05</button>
-          <button type="button" id="tapSync" title="播放中聽到第一拍時按下，自動抓取目前秒數為 Offset">🎯 抓第一拍</button>
-        </span>
-        <label>縮放 <select id="zoom"><option value="0.55">55%</option><option value="0.7">70%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option></select></label>
-        <label>每行小節 <select id="bpr"><option value="-1" selected>自動</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select></label>
-        <label>捲動 <select id="scrollMode"><option value="ahead" selected>倒數第二行就捲動</option><option value="continuous">每換行就捲</option><option value="smooth">平滑持續</option><option value="off">不自動捲</option></select></label>
-        <label>版面 <select id="layout"><option value="page">自動換行</option><option value="horizontal">橫向捲動</option></select></label>
-        <label id="trackWrap" hidden>聲部 <select id="track"></select></label>
-      </div>
-
-      <div id="hint" class="more"><span style="float:right;color:#999;font-size:11px">介面 v6</span>點擊樂譜任意處可跳轉；按住滑鼠拖曳（或手機長按拖曳）可框選小節，勾選「循環選取區」即可反覆練習。</div>
+      <div id="tip"></div>
       <div id="msg"></div>
     </div>
   </div>
   <div id="splitter" role="separator" aria-label="拖曳調整影片與譜面比例" title="拖曳調整大小；雙擊還原"></div>
   <div id="scoreWrap"><div id="score"></div></div>
 </main>
+</div>
+
+<div id="countOverlay"></div>
+<div id="panel" role="dialog" aria-label="設定">
+  <div id="panelHead"><b>⚙ 設定</b><button id="panelClose" type="button" aria-label="關閉">✕</button></div>
+  <div id="tabs">
+    <button class="tab on" data-tab="sound" type="button">🔊 發聲</button>
+    <button class="tab" data-tab="metro" type="button">🎵 節拍</button>
+    <button class="tab" data-tab="loop" type="button">🔁 循環</button>
+    <button class="tab" data-tab="view" type="button">👁 譜面</button>
+    <button class="tab teacher-only" data-tab="adv" type="button">🛠 老師</button>
+  </div>
+  <div class="sec on" data-sec="sound">
+    <div class="item"><span>發聲來源</span><span class="chips">
+      <label class="chip"><input type="checkbox" id="srcYt" checked> 影片</label>
+      <label class="chip"><input type="checkbox" id="srcMp3"> MP3</label>
+      <label class="chip"><input type="checkbox" id="srcSynth"> 譜面鼓聲</label></span></div>
+    <div class="item"><span>鼓聲音量</span><span class="ctrl"><input type="range" id="vol" min="0" max="300" step="5" value="150"> <span id="volLbl">150%</span></span></div>
+    <div class="item"><span>影音音量</span><span class="ctrl"><input type="range" id="volM" min="0" max="100" step="5" value="100"> <span id="volMLbl">100%</span></span></div>
+    <div class="item"><span>鼓組</span><select id="kit"><option value="0">標準</option><option value="8">Room</option><option value="16" selected>Power</option></select></div>
+    <select id="mode" hidden>
+      <option value="video">YouTube 影片</option>
+      <option value="audio">MP3 / WAV 音檔</option>
+      <option value="synth">譜面鼓聲（無原曲）</option>
+    </select>
+    <small>來源可同時勾選。速度勾了「影片」時，只能用 YouTube 支援的速度。</small>
+  </div>
+  <div class="sec" data-sec="metro">
+    <div class="item"><span>節拍間隔</span><select id="metStep"><option value="960">4分音符</option><option value="480">8分音符</option></select></div>
+    <div class="item"><span>節拍器音量</span><span class="ctrl"><input type="range" id="metVol" min="0.1" max="1" step="0.05" value="0.6"></span></div>
+    <div class="item"><span>預備拍</span><select id="countIn"><option value="0">關</option><option value="1">1 小節</option><option value="2">2 小節</option></select></div>
+    <small>預備拍：按「播放」後，先打 1～2 小節的節拍（含倒數數字），再開始播放。再按一次可取消。</small>
+  </div>
+  <div class="sec" data-sec="loop">
+    <div class="item"><label class="chip"><input type="checkbox" id="loop"> 循環選取區</label><span id="rangeInfo">未選取範圍</span></div>
+    <div class="item"><button id="selRange" type="button">🔁 點選小節範圍</button><button id="clearSel" type="button">清除選取</button></div>
+    <small>電腦：在譜上按住滑鼠拖曳框選。手機：按「點選小節範圍」，再依序點「起點小節」與「終點小節」，會自動開始循環。</small>
+  </div>
+  <div class="sec" data-sec="view">
+    <div class="item"><span>縮放</span><select id="zoom"><option value="0.55">55%</option><option value="0.7">70%</option><option value="0.85">85%</option><option value="1" selected>100%</option><option value="1.2">120%</option><option value="1.5">150%</option></select></div>
+    <div class="item"><span>每行小節</span><select id="bpr"><option value="-1" selected>自動</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option></select></div>
+    <div class="item"><span>捲動方式</span><select id="scrollMode"><option value="ahead" selected>倒數第三行就捲動</option><option value="continuous">每換行就捲</option><option value="smooth">平滑持續</option><option value="off">不自動捲</option></select></div>
+    <div class="item"><span>版面</span><select id="layout"><option value="page">自動換行</option><option value="horizontal">橫向捲動</option></select></div>
+    <div class="item" id="trackWrap" hidden><span>聲部</span><select id="track"></select></div>
+  </div>
+  <div class="sec" data-sec="adv">
+    <div class="item"><span>起始(秒)</span><span class="nudge-group"><input id="offset" type="number" step="0.01" value="0" style="width:76px">
+      <button type="button" onclick="nudgeOffset(-0.05)">-0.05</button>
+      <button type="button" onclick="nudgeOffset(0.05)">+0.05</button></span></div>
+    <div class="item"><button type="button" id="tapSync" title="播放中聽到第一拍時按下，自動抓取目前秒數為 Offset">🎯 抓第一拍</button></div>
+    <small>調整影片／音檔「第一拍」對齊譜面的秒數。</small>
+  </div>
+  <div id="panelFoot">介面 v7</div>
 </div>
 
 <dialog id="shareModal">
@@ -242,6 +292,7 @@ if (isStudent) document.body.classList.add("student-mode");
 
 const copyGp = () => typeof lastGp === "string" ? lastGp : lastGp.slice();
 const ytId = v => { const m = String(v || "").match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/); return m ? m[1] : String(v || "").trim(); };
+const tip = t => { $("#tip").textContent = t || ""; };
 const msg = t => $("#msg").textContent = t || "";
 const fmtTime = s => {
   if (!isFinite(s) || s < 0) return "00:00";
@@ -422,6 +473,7 @@ function scrollModeOf(v) {
   return { off: alphaTab.ScrollMode.Off, continuous: alphaTab.ScrollMode.Continuous, smooth: alphaTab.ScrollMode.Smooth }[v] ?? alphaTab.ScrollMode.Continuous;
 }
 // 「倒數第二行就捲動」：游標走到畫面上倒數第二個完整可見的譜行時，把目前這一行捲到最上方
+const AHEAD_LINES = 2; // 在畫面「倒數第 (AHEAD_LINES+1) 行」的行尾捲動；1＝倒數第二行，2＝倒數第三行
 let lastAhead = { target: -1, t: 0 };
 function aheadScroll(beat) {
   if ($("#scrollMode").value !== "ahead" || $("#layout").value === "horizontal") return;
@@ -437,7 +489,7 @@ function aheadScroll(beat) {
     const top = off + s.visualBounds.y, bot = top + s.visualBounds.h;
     if (top >= st - 4 && bot <= st + ch + 4) { if (a < 0) a = i; b = i; }
   });
-  const trigger = a < 0 ? -1 : Math.max(a, b - 1);
+  const trigger = a < 0 ? -1 : Math.max(a, b - AHEAD_LINES);
   const lb = systems[idx].bars && systems[idx].bars.length ? systems[idx].bars[systems[idx].bars.length - 1] : null;
   const atEnd = lb ? (bb.visualBounds.x >= lb.visualBounds.x + lb.visualBounds.w * 0.5) : true;
   if (!(a < 0 || idx < a || idx > trigger || (idx === trigger && atEnd))) return;
@@ -621,6 +673,7 @@ function updateMediaUI() {
   else { ytDiv.style.display = "block"; audioBox.classList.remove("show"); $("#vwrap").style.opacity = 0.35; }
 }
 function setSources(o, reload = true) {
+  cancelCountIn();
   Object.assign(src, o);
   if (!src.yt && !src.mp3 && !src.synth) src.synth = true;
   $("#srcYt").checked = src.yt; $("#srcMp3").checked = src.mp3; $("#srcSynth").checked = src.synth;
@@ -711,12 +764,42 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 
-$("#play").onclick = () => { if (ac) ac.resume(); applyVol(); api.playPause(); };
+let counting = false, countTimers = [];
+function showCount(t) { const o = $("#countOverlay"); o.textContent = t; o.classList.toggle("show", !!t); }
+function cancelCountIn() {
+  if (!counting) return false;
+  countTimers.forEach(clearTimeout); countTimers = []; counting = false; showCount("");
+  $("#play").textContent = "▶ 播放";
+  return true;
+}
+function startCountIn(bars) {
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume();
+  const sc = api.score, tick = api.tickPosition || 0;
+  let mb = sc ? sc.masterBars[0] : null;
+  if (sc) for (const b of sc.masterBars) { if (tick >= b.start && tick < b.start + b.calculateDuration()) { mb = b; break; } }
+  const num = (mb && mb.timeSignatureNumerator) || 4, den = (mb && mb.timeSignatureDenominator) || 4;
+  const bpm = ((mb && mb.tempoAutomation && mb.tempoAutomation.value) || baseBpm) * curRate;
+  const interval = 60 / bpm * 4 / den, n = num * bars, lead = 0.12;
+  const t0 = ac.currentTime + lead;
+  counting = true; $("#play").textContent = "⏹ 取消預備";
+  for (let i = 0; i < n; i++) {
+    click(t0 + i * interval, i % num === 0);
+    countTimers.push(setTimeout(() => showCount(String(num - (i % num))), (lead + i * interval) * 1000));
+  }
+  countTimers.push(setTimeout(() => { counting = false; showCount(""); applyVol(); api.playPause(); }, (lead + n * interval) * 1000));
+}
+$("#play").onclick = () => {
+  if (cancelCountIn()) return;
+  if (ac) ac.resume();
+  applyVol();
+  const bars = Number($("#countIn").value);
+  if (api.playerState !== 1 && bars > 0) startCountIn(bars); else api.playPause();
+};
 $("#met").onchange = e => { if (e.target.checked) { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); met.last = -1; } };
 $("#metStep").onchange = () => { met.last = -1; };
 ["#srcYt", "#srcMp3", "#srcSynth"].forEach(id => $(id).onchange = () => setSources({ yt: $("#srcYt").checked, mp3: $("#srcMp3").checked, synth: $("#srcSynth").checked }));
 $("#stop").onclick = () => {
-  api.stop(); stopTimer();
+  cancelCountIn(); api.stop(); stopTimer();
   try { audioEl.pause(); audioEl.currentTime = offset; } catch (e) {}
   try { yt.pauseVideo(); yt.seekTo(offset, true); } catch (e) {}
 };
@@ -729,7 +812,53 @@ $("#kit").onchange = e => {
 $("#vol").oninput = e => { curVol = Number(e.target.value) / 100; applyVol(); };
 $("#volM").oninput = e => { curMVol = Number(e.target.value) / 100; applyVol(); };
 $("#loop").onchange = e => { api.isLooping = e.target.checked; };
-$("#clearSel").onclick = () => { api.playbackRange = null; api.highlightPlaybackRange && api.highlightPlaybackRange(null, null); };
+let selMode = false, selFirst = null;
+function setSelMode(on) {
+  selMode = on; selFirst = null;
+  $("#selRange").classList.toggle("on", on);
+  $("#selRange").textContent = on ? "取消選取…" : "🔁 點選小節範圍";
+  $("#scoreWrap").classList.toggle("selecting", on);
+  tip(on ? "請點選「起點小節」（可再點終點小節）" : "");
+  if (on) openPanel(false);
+}
+function barRange(a, b) {
+  const s0 = Math.min(a.start, b.start), e0 = Math.max(a.start + a.calculateDuration(), b.start + b.calculateDuration());
+  return { s0, e0, from: Math.min(a.index, b.index) + 1, to: Math.max(a.index, b.index) + 1 };
+}
+function applyRange(a, b) {
+  const r = barRange(a, b);
+  api.playbackRange = { startTick: r.s0, endTick: r.e0 };
+  try { api.highlightPlaybackRange(r.s0, r.e0); } catch (e) {}
+  api.isLooping = true; $("#loop").checked = true;
+  $("#rangeInfo").textContent = r.from === r.to ? "循環：第 " + r.from + " 小節" : "循環：第 " + r.from + "–" + r.to + " 小節";
+}
+$("#selRange").onclick = () => setSelMode(!selMode);
+(function () {
+  const el = $("#score"); let down = null;
+  el.addEventListener("pointerdown", e => { if (selMode) down = { x: e.clientX, y: e.clientY }; });
+  el.addEventListener("pointerup", e => {
+    if (!selMode || !down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
+    if (moved > 12 || !api.boundsLookup) return;
+    const r = el.getBoundingClientRect();
+    const beat = api.boundsLookup.getBeatAtPos(e.clientX - r.left, e.clientY - r.top);
+    if (!beat) return;
+    const mb = beat.voice.bar.masterBar;
+    if (!selFirst) {
+      selFirst = mb; applyRange(mb, mb);
+      tip("已選第 " + (mb.index + 1) + " 小節；再點終點小節，或再點同一小節只循環這一小節");
+    } else {
+      applyRange(selFirst, mb); setSelMode(false);
+      tip("");
+    }
+  });
+})();
+$("#clearSel").onclick = () => {
+  api.playbackRange = null;
+  try { api.highlightPlaybackRange(null, null); } catch (e) {}
+  $("#loop").checked = false; api.isLooping = false;
+  $("#rangeInfo").textContent = "未選取範圍"; setSelMode(false);
+};
 
 function applyOffset(val) {
   offset = Math.round((Number(val) || 0) * 100) / 100;
@@ -846,7 +975,14 @@ function splitFromPointer(e) {
 })();
 $("#bpr").onchange = e => { api.settings.display.barsPerRow = Number(e.target.value); api.updateSettings(); api.render(); };
 $("#scrollMode").onchange = e => { api.settings.player.scrollMode = scrollModeOf(e.target.value); api.updateSettings(); };
-$("#moreBtn").onclick = () => $("#ctl").classList.toggle("show-more");
+function openPanel(on) { $("#panel").classList.toggle("open", on); $("#moreBtn").setAttribute("aria-expanded", on ? "true" : "false"); }
+$("#moreBtn").onclick = () => openPanel(!$("#panel").classList.contains("open"));
+$("#panelClose").onclick = () => openPanel(false);
+document.addEventListener("keydown", e => { if (e.key === "Escape") openPanel(false); });
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
+  document.querySelectorAll(".sec").forEach(x => x.classList.toggle("on", x.dataset.sec === t.dataset.tab));
+});
 $("#goSite").onclick = () => {
   const g = $("#siteGp").value.trim(), u = $("#urlYt").value.trim();
   if (!g || !u) return msg("請填「網站上的 GP 路徑」並貼上 YouTube 網址");
